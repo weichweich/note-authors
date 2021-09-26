@@ -50,8 +50,6 @@ async function watchForOffline(api) {
         labelNames: ["author"]
     })
 
-    let current_round = await api.query.parachainStaking.round()
-
     let chain_state = {
         authors: await api.query.session.validators(),
         last_slot: null,
@@ -63,11 +61,6 @@ async function watchForOffline(api) {
         console.log("🗳️ New validator set")
         chain_state.authors = new_validators
     })
-
-    console.log(`\
-Index:  ${current_round.current}
-Start:  ${current_round.first}
-End:    ${chain_state.round_end}`)
 
     const head_unsub = await api.derive.chain.subscribeNewHeads((header) => {
         note_new_head(api, chain_state, header)
@@ -102,8 +95,6 @@ version:    ${api.runtimeVersion.specVersion.toString()}`)
 }
 
 function setup_webserver(port, host) {
-    console.log("👀 Watch block authors")
-
     const app = express()
     const register = prom_client.register
 
@@ -131,15 +122,11 @@ async function execute() {
     const host = process.env.HOST || 'localhost'
     const ws_address = process.env.WS_ADDRESS || 'wss://peregrine.kilt.io'
 
+    console.log("👀 Watch block authors")
+
     setup_webserver(port, host)
 
     const api = await setup_api_connection(ws_address)
-    api.on('disconnected', () => {
-        console.log("🪦 WS connection was dropped.")
-    });
-    api.on('error', (error) => {
-        console.log("❌ WS connection error!", error)
-    });
 
     const unsub = await watchForOffline(api)
 
