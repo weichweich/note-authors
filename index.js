@@ -20,7 +20,24 @@ function note_skipped_slots(chain_state, block_num, current_slot) {
     }
 }
 
-async function watchForOffline(api) {
+async function note_new_head(api, chain_state, header) {
+    const signed_block = await api.derive.chain.getBlock(header.hash)
+    const time = get_timestamp(signed_block.block)
+    const slot = Math.floor(time / 12_000)
+    const author = chain_state.authors[(slot) % chain_state.authors.length]
+
+    // don't note skipped slots because we don't know which slots where skipped.
+    if (chain_state.last_slot !== null) {
+        note_skipped_slots(chain_state, header.number, chain_state.last_slot, slot)
+    }
+
+    process.stdout.write(`Author authored slot #${slot} block #${header.number}: ${author}\n`)
+
+    chain_state.online_count.labels({ author }).inc(1)
+    chain_state.last_slot = slot
+}
+
+async function watchForOffline(api, chain_state) {
     const online_count = new prom_client.Counter({
         name: 'blocks_authored',
         help: 'the number of blocks build by an author',
@@ -35,7 +52,6 @@ async function watchForOffline(api) {
     let current_round = await api.query.parachainStaking.round()
 
     let chain_state = {
-        round_end: current_round.first.toNumber() + current_round.length.toNumber(),
         authors: await api.query.session.validators(),
         last_slot: null,
         online_count,
@@ -52,33 +68,15 @@ Index:  ${current_round.current}
 Start:  ${current_round.first}
 End:    ${chain_state.round_end}`)
 
-    let wait = new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
         api.derive.chain.subscribeNewHeads((header) => {
-            api.derive.chain.getBlock(header.hash).then((signedBlock) => {
-                let block = signedBlock.block
-                let time = get_timestamp(block)
-                let slot = Math.floor(time / 12_000)
-
-                if (chain_state.last_slot !== null) {
-                    note_skipped_slots(chain_state, header.number, chain_state.last_slot, slot)
-                }
-                const author = chain_state.authors[(slot) % chain_state.authors.length]
-                chain_state.online_count.labels({ author }).inc(1)
-                process.stdout.write(`Author authored slot #${slot} block #${header.number}: ${author}\n`)
-                chain_state.last_slot = slot
-            })
+            note_new_head(api, chain_state, header)
         })
     })
-
-    await wait
-
 }
 
-async function setup() {
+async function setup_api_connection(ws_address) {
     await cryptoWaitReady()
-    const port = process.env.PORT || 9102
-    const host = process.env.HOST || 'localhost'
-    const ws_address = process.env.WS_ADDRESS || 'wss://peregrine.kilt.io'
 
     const api = await ApiPromise.create({
         provider: new WsProvider(ws_address),
@@ -95,7 +93,10 @@ chain:      ${api.runtimeChain.toString()}
 spec-name:  ${api.runtimeVersion.specName.toString()}
 version:    ${api.runtimeVersion.specVersion.toString()}
 `)
+    return api
+}
 
+function setup_webserver(port, host) {
     const app = express()
     const register = prom_client.register
 
@@ -112,15 +113,25 @@ version:    ${api.runtimeVersion.specVersion.toString()}
         `Server listening on http://${host}:${port}/metrics`,
     )
 
-    http.createServer(app).listen({
+    return http.createServer(app).listen({
         host,
         port,
-      })
-    
+    })
+}
+
+async function execute() {
+    const port = process.env.PORT || 9102
+    const host = process.env.HOST || 'localhost'
+    const ws_address = process.env.WS_ADDRESS || 'wss://peregrine.kilt.io'
+
+    const api = setup_api_connection(ws_address)
+
+    setup_webserver(port, host)
+
     await watchForOffline(api)
 
     await api.disconnect()
     console.log(`End fun`)
 }
 
-setup()
+execute()
