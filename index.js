@@ -37,7 +37,7 @@ async function note_new_head(api, chain_state, header) {
     chain_state.last_slot = slot
 }
 
-async function watchForOffline(api, chain_state) {
+async function watchForOffline(api) {
     const online_count = new prom_client.Counter({
         name: 'blocks_authored',
         help: 'the number of blocks build by an author',
@@ -124,7 +124,7 @@ async function execute() {
     const host = process.env.HOST || 'localhost'
     const ws_address = process.env.WS_ADDRESS || 'wss://peregrine.kilt.io'
 
-    const api = setup_api_connection(ws_address)
+    const api = await setup_api_connection(ws_address)
 
     setup_webserver(port, host)
 
