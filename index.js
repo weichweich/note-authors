@@ -15,7 +15,7 @@ function note_skipped_slots(chain_state, block_num, current_slot) {
     while ((chain_state.last_slot + i) < current_slot) {
         let skipper = chain_state.authors[(chain_state.last_slot + i) % chain_state.authors.length]
         console.log(`Author skipped slot  #${chain_state.last_slot + i} block #${block_num}: ${skipper}`)
-        chain_state.offline_count.labels({ skipper }).inc(1)
+        chain_state.offline_count.labels({ author: skipper }).inc(1)
         i += 1
     }
 }
