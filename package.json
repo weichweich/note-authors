@@ -1,0 +1,19 @@
+{
+  "name": "chain_workbench",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^7.17.0"
+  },
+  "dependencies": {
+    "@kiltprotocol/type-definitions": "0.1.16",
+    "@polkadot/api": "^6.0.5",
+    "@polkadot/keyring": "^7.4.1",
+    "@polkadot/types": "^6.0.5",
+    "@polkadot/util": "^7.4.1",
+    "@polkadot/util-crypto": "^7.4.1",
+    "express": "^4.17.1",
+    "prom-client": "^14.0.0"
+  }
+}
