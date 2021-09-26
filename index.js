@@ -42,6 +42,11 @@ async function watchForOffline(api) {
         offline_count,
     }
 
+    api.query.session.validators((new_validators) => {
+        console.log("New validator set")
+        chain_state.authors = new_validators
+    })
+
     console.log(`\
 Index:  ${current_round.current}
 Start:  ${current_round.first}
@@ -71,9 +76,12 @@ End:    ${chain_state.round_end}`)
 
 async function setup() {
     await cryptoWaitReady()
+    const port = process.env.PORT || 9102
+    const host = process.env.HOST || 'localhost'
+    const ws_address = process.env.WS_ADDRESS || 'wss://peregrine.kilt.io'
 
     const api = await ApiPromise.create({
-        provider: new WsProvider('wss://peregrine.kilt.io'),
+        provider: new WsProvider(ws_address),
         typesBundle: {
             spec: {
                 'mashnet-node': typeBundleForPolkadot,
@@ -100,8 +108,6 @@ version:    ${api.runtimeVersion.specVersion.toString()}
         }
     })
 
-    const port = process.env.PORT || 3000
-    const host = process.env.HOST || 'localhost'
     console.log(
         `Server listening on http://${host}:${port}/metrics`,
     )
