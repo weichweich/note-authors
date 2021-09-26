@@ -3,7 +3,7 @@ const { ApiPromise, WsProvider } = require('@polkadot/api')
 const { cryptoWaitReady } = require('@polkadot/util-crypto')
 const prom_client = require('prom-client')
 const express = require('express')
-var http = require('http')
+const http = require('http')
 
 function get_timestamp(block) {
     let tx_set_time = block.extrinsics.find((tx) => tx.method.section === "timestamp")
@@ -13,9 +13,10 @@ function get_timestamp(block) {
 function note_skipped_slots(chain_state, block_num, current_slot) {
     let i = 1
     while ((chain_state.last_slot + i) < current_slot) {
-        let skipper = chain_state.authors[(chain_state.last_slot + i) % chain_state.authors.length]
-        console.log(`Author skipped slot  #${chain_state.last_slot + i} block #${block_num}: ${skipper}`)
+        const skipper = chain_state.authors[(chain_state.last_slot + i) % chain_state.authors.length]
         chain_state.offline_count.labels({ author: skipper }).inc(1)
+        console.log(`💤 block #${block_num} at slot #${chain_state.last_slot + i} skipped by  ${skipper}`)
+
         i += 1
     }
 }
@@ -28,10 +29,10 @@ async function note_new_head(api, chain_state, header) {
 
     // don't note skipped slots because we don't know which slots where skipped.
     if (chain_state.last_slot !== null) {
-        note_skipped_slots(chain_state, header.number, chain_state.last_slot, slot)
+        note_skipped_slots(chain_state, header.number, slot)
     }
 
-    process.stdout.write(`Author authored slot #${slot} block #${header.number}: ${author}\n`)
+    console.log(`💌 block #${header.number} at slot #${slot} authored by ${author}`)
 
     chain_state.online_count.labels({ author }).inc(1)
     chain_state.last_slot = slot
@@ -58,8 +59,8 @@ async function watchForOffline(api) {
         offline_count,
     }
 
-    api.query.session.validators((new_validators) => {
-        console.log("New validator set")
+    const validator_unsub = await api.query.session.validators((new_validators) => {
+        console.log("🗳️ New validator set")
         chain_state.authors = new_validators
     })
 
@@ -68,11 +69,14 @@ Index:  ${current_round.current}
 Start:  ${current_round.first}
 End:    ${chain_state.round_end}`)
 
-    await new Promise((resolve, reject) => {
-        api.derive.chain.subscribeNewHeads((header) => {
-            note_new_head(api, chain_state, header)
-        })
+    const head_unsub = await api.derive.chain.subscribeNewHeads((header) => {
+        note_new_head(api, chain_state, header)
     })
+
+    return () => {
+        validator_unsub()
+        head_unsub()
+    }
 }
 
 async function setup_api_connection(ws_address) {
@@ -88,15 +92,18 @@ async function setup_api_connection(ws_address) {
         },
     })
 
-    console.log(`Start fun!
+    await api.isReady
+
+    console.log(`\
 chain:      ${api.runtimeChain.toString()}
 spec-name:  ${api.runtimeVersion.specName.toString()}
-version:    ${api.runtimeVersion.specVersion.toString()}
-`)
+version:    ${api.runtimeVersion.specVersion.toString()}`)
     return api
 }
 
 function setup_webserver(port, host) {
+    console.log("👀 Watch block authors")
+
     const app = express()
     const register = prom_client.register
 
@@ -110,7 +117,7 @@ function setup_webserver(port, host) {
     })
 
     console.log(
-        `Server listening on http://${host}:${port}/metrics`,
+        `📫 Server listening on http://${host}:${port}/metrics`,
     )
 
     return http.createServer(app).listen({
@@ -124,14 +131,28 @@ async function execute() {
     const host = process.env.HOST || 'localhost'
     const ws_address = process.env.WS_ADDRESS || 'wss://peregrine.kilt.io'
 
-    const api = await setup_api_connection(ws_address)
-
     setup_webserver(port, host)
 
-    await watchForOffline(api)
+    const api = await setup_api_connection(ws_address)
+    api.on('disconnected', () => {
+        console.log("🪦 WS connection was dropped.")
+    });
+    api.on('error', (error) => {
+        console.log("❌ WS connection error!", error)
+    });
 
-    await api.disconnect()
-    console.log(`End fun`)
+    const unsub = await watchForOffline(api)
+
+    process.on('SIGINT', () => {
+        unsub()
+        api.disconnect().then(() => {
+            console.log(`End fun`)
+            process.exit(0)
+        })
+    });
+
+    // wait infinitely
+    await new Promise((res, rej) => { })
 }
 
 execute()
