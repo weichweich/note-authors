@@ -136,13 +136,16 @@ async function execute() {
 
     const unsub = await watchForOffline(api)
 
-    process.on('SIGINT', () => {
+    const cleanup = () => {
         unsub()
         api.disconnect().then(() => {
             console.log(`End fun`)
             process.exit(0)
         })
-    });
+    }
+
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
 
     // wait infinitely
     await new Promise((res, rej) => { })
