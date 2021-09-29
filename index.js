@@ -1,82 +1,88 @@
 const { typeBundleForPolkadot } = require('@kiltprotocol/type-definitions')
 const { ApiPromise, WsProvider } = require('@polkadot/api')
 const { cryptoWaitReady } = require('@polkadot/util-crypto')
-const prom_client = require('prom-client')
+const promClient = require('prom-client')
 const express = require('express')
 const http = require('http')
 
-function get_timestamp(block) {
-    let tx_set_time = block.extrinsics.find((tx) => tx.method.section === "timestamp")
-    return tx_set_time.method.args[0].toNumber()
+function getTimestamp(block) {
+    let txSetTime = block.extrinsics.find((tx) => tx.method.section === "timestamp")
+    return txSetTime.method.args[0].toNumber()
 }
 
-function note_skipped_slots(chain_state, block_num, current_slot) {
+function noteSkippedSlots(chainState, blockNum, currentSlot) {
     let i = 1
-    while ((chain_state.last_slot + i) < current_slot) {
-        const skipper = chain_state.authors[(chain_state.last_slot + i) % chain_state.authors.length]
-        chain_state.offline_count.labels({ author: skipper }).inc(1)
-        console.log(`💤 block #${block_num} at slot #${chain_state.last_slot + i} skipped by  ${skipper}`)
+    while ((chainState.lastSlot + i) < currentSlot) {
+        const skipper = chainState.authors[(chainState.lastSlot + i) % chainState.authors.length]
+        chainState.offlineCount.labels({ author: skipper }).inc(1)
+        console.log(`💤 block #${blockNum} at slot #${chainState.lastSlot + i} skipped by  ${skipper}`)
 
         i += 1
     }
 }
 
-async function note_new_head(api, chain_state, header) {
-    const signed_block = await api.derive.chain.getBlock(header.hash)
-    const time = get_timestamp(signed_block.block)
+async function noteNewHead(api, chainState, header) {
+    const signedBlock = await api.derive.chain.getBlock(header.hash)
+    const time = getTimestamp(signedBlock.block)
     const slot = Math.floor(time / 12_000)
-    const author = chain_state.authors[(slot) % chain_state.authors.length]
+    const author = chainState.authors[(slot) % chainState.authors.length]
 
     // don't note skipped slots because we don't know which slots where skipped.
-    if (chain_state.last_slot !== null) {
-        note_skipped_slots(chain_state, header.number, slot)
+    if (chainState.lastSlot !== null) {
+        noteSkippedSlots(chainState, header.number, slot)
     }
 
     console.log(`💌 block #${header.number} at slot #${slot} authored by ${author}`)
 
-    chain_state.online_count.labels({ author }).inc(1)
-    chain_state.last_slot = slot
+    chainState.onlineCount.labels({ author }).inc(1)
+    chainState.lastSlot = slot
 }
 
 async function watchForOffline(api) {
-    const online_count = new prom_client.Counter({
+    const onlineCount = new promClient.Counter({
         name: 'blocks_authored',
         help: 'the number of blocks build by an author',
         labelNames: ["author"]
     })
-    const offline_count = new prom_client.Counter({
+    const offlineCount = new promClient.Counter({
         name: 'blocks_skipped',
         help: 'the number of blocks skipped by an author',
         labelNames: ["author"]
     })
 
-    let chain_state = {
+    let chainState = {
         authors: await api.query.session.validators(),
-        last_slot: null,
-        online_count,
-        offline_count,
+        lastSlot: null,
+        onlineCount,
+        offlineCount,
     }
 
-    const validator_unsub = await api.query.session.validators((new_validators) => {
-        console.log("🗳️ New validator set")
-        chain_state.authors = new_validators
+    api.on("disconnected", () => {
+        console.log("🪦 ws connection lost.")
+        // we might skip blocks when disconnected.
+        chainState.lastSlot = null
     })
 
-    const head_unsub = await api.derive.chain.subscribeNewHeads((header) => {
-        note_new_head(api, chain_state, header)
+    const validatorUnsub = await api.query.session.validators((newValidators) => {
+        console.log("🗳️ New validator set")
+        chainState.authors = newValidators
+    })
+
+    const headUnsub = await api.derive.chain.subscribeNewHeads((header) => {
+        noteNewHead(api, chainState, header)
     })
 
     return () => {
-        validator_unsub()
-        head_unsub()
+        validatorUnsub()
+        headUnsub()
     }
 }
 
-async function setup_api_connection(ws_address) {
+async function setupApiConnection(wsAddress) {
     await cryptoWaitReady()
 
     const api = await ApiPromise.create({
-        provider: new WsProvider(ws_address),
+        provider: new WsProvider(wsAddress),
         typesBundle: {
             spec: {
                 'mashnet-node': typeBundleForPolkadot,
@@ -94,9 +100,9 @@ version:    ${api.runtimeVersion.specVersion.toString()}`)
     return api
 }
 
-function setup_webserver(port, host) {
+function setupWebserver(port, host) {
     const app = express()
-    const register = prom_client.register
+    const register = promClient.register
 
     app.get('/metrics', async (req, res) => {
         try {
@@ -120,13 +126,13 @@ function setup_webserver(port, host) {
 async function execute() {
     const port = process.env.PORT || 9102
     const host = process.env.HOST || 'localhost'
-    const ws_address = process.env.WS_ADDRESS || 'wss://peregrine.kilt.io'
+    const wsAddress = process.env.WS_ADDRESS || 'wss://peregrine.kilt.io'
 
     console.log("👀 Watch block authors")
 
-    setup_webserver(port, host)
+    setupWebserver(port, host)
 
-    const api = await setup_api_connection(ws_address)
+    const api = await setupApiConnection(wsAddress)
 
     const unsub = await watchForOffline(api)
 
