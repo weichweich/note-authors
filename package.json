@@ -8,12 +8,12 @@
   },
   "dependencies": {
     "@kiltprotocol/type-definitions": "0.1.23",
-    "@polkadot/api": "^6.5.2",
-    "@polkadot/keyring": "^7.6.1",
-    "@polkadot/types": "^6.5.2",
-    "@polkadot/util": "^7.6.1",
-    "@polkadot/util-crypto": "^7.6.1",
+    "@polkadot/api": "^6.6.1",
+    "@polkadot/keyring": "^7.7.1",
+    "@polkadot/types": "^6.6.1",
+    "@polkadot/util": "^7.7.1",
+    "@polkadot/util-crypto": "^7.7.1",
     "express": "^4.17.1",
-    "prom-client": "^14.0.0"
+    "prom-client": "^14.0.1"
   }
 }
