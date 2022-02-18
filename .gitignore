@@ -24,8 +24,9 @@ yarn-error.log*
 .env.production.local
 settings.json
 
-# doc 
+# doc
 docs/api
 
 # misc
 /.idea
+slackconfig.js

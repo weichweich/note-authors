@@ -1,8 +1,9 @@
-const { ApiPromise, WsProvider } = require('@polkadot/api')
-const { cryptoWaitReady } = require('@polkadot/util-crypto')
-const promClient = require('prom-client')
-const express = require('express')
-const http = require('http')
+import { ApiPromise, WsProvider } from '@polkadot/api'
+import { cryptoWaitReady } from '@polkadot/util-crypto'
+import promClient from 'prom-client'
+import express from 'express'
+import http from 'http'
+import { notifySlack } from './slack.js'
 
 function getTimestamp(block) {
   let txSetTime = block.extrinsics.find(
@@ -11,7 +12,7 @@ function getTimestamp(block) {
   if (typeof txSetTime !== 'undefined') {
     return txSetTime.method.args[0].toNumber()
   } else {
-      return null
+    return null
   }
 }
 
@@ -31,8 +32,7 @@ function noteSkippedSlots(chainState, blockNum, currentSlot) {
   }
 }
 
-async function noteNewHead(api, chainState, header) {
-  const signedBlock = await api.derive.chain.getBlock(header.hash)
+async function findOfflineCollator(api, chainState, header, signedBlock) {
   // genesis block doesn't have a timestamp.
   const time = getTimestamp(signedBlock.block)
   if (time == null) return
@@ -50,6 +50,15 @@ async function noteNewHead(api, chainState, header) {
 
   chainState.onlineCount.labels({ author }).inc(1)
   chainState.lastSlot = slot
+}
+
+async function noteNewHead(api, chainState, header) {
+  const signedBlock = await api.derive.chain.getBlock(header.hash)
+
+  await Promise.all([
+    findOfflineCollator(api, chainState, header, signedBlock),
+    notifySlack(api, chainState, header, signedBlock),
+  ])
 }
 
 async function watchForOffline(api) {
@@ -75,6 +84,10 @@ async function watchForOffline(api) {
     console.log('🪦 ws connection lost.')
     // we might skip blocks when disconnected.
     chainState.lastSlot = null
+  })
+
+  api.on('error', () => {
+    console.log('🔥 got an error.')
   })
 
   const validatorUnsub = await api.query.session.validators((newValidators) => {
