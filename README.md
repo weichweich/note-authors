@@ -2,7 +2,7 @@
 
 Provides a prometheus server that counts who has authored a block and who missed his slot.
 
-assumes you are 
+assumes you are
 
 * connecting to a KILT chain
 * using AURA
