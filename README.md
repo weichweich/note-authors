@@ -16,4 +16,3 @@ use environment variables
 * `HOST` where to listen for prometheus queries (default: `localhost`)
 * `WS_ADDRESS` to which rpc node should we connect (default `wss://peregrine.kilt.io`)
 * `SLACK_WEBHOOK` [the slack webhook](https://api.slack.com/messaging/webhooks) where we can post messages into a channel
-* `MSG_CONFIG` the message configuration – what should be send for which event
